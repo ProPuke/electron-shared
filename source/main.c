@@ -18,7 +18,7 @@
 #include "lib/zip/src/zip.h"
 
 #define PROGRAM_NAME    "electron-shared"
-#define PROGRAM_VERSION "0.1"
+#define PROGRAM_VERSION "0.1-alpha"
 
 #if defined(WIN32) || defined(_WIN32)
 	#define OS "win32"
