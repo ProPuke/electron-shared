@@ -1,0 +1,18 @@
+[submodule "source/lib/semver.c"]
+	path = source/lib/semver.c
+	url = https://github.com/h2non/semver.c.git
+[submodule "source/lib/libui"]
+	path = source/lib/libui
+	url = https://github.com/andlabs/libui.git
+[submodule "source/lib/jsmn"]
+	path = source/lib/jsmn
+	url = https://github.com/zserge/jsmn.git
+[submodule "source/lib/cfgpath"]
+	path = source/lib/cfgpath
+	url = https://github.com/Malvineous/cfgpath.git
+[submodule "source/lib/zip"]
+	path = source/lib/zip
+	url = https://github.com/kuba--/zip.git
+[submodule "test/electron-quick-start"]
+	path = test/electron-quick-start
+	url = https://github.com/electron/electron-quick-start
