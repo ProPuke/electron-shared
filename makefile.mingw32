@@ -1,0 +1,62 @@
+CC             = i686-w64-mingw32-gcc
+CXX            = i686-w64-mingw32-g++
+RES            = i686-w64-mingw32-windres
+CFLAGS         = -Os -fdata-sections -ffunction-sections -Isource/lib/curl/include -static-libgcc -static-libstdc++ -DCURL_STATICLIB
+CMAKE_COMMANDS = env CFLAGS="-fdata-sections -ffunction-sections" CXXFLAGS="-fdata-sections -ffunction-sections"
+LDFLAGS        = -lm -s -Wl,--gc-sections -static-libgcc -static-libstdc++ -mwindows -lcomctl32 -lole32 -ld2d1 -ldwrite -lws2_32 -lcrypt32
+OBJ_DIR        = obj/mingw32
+
+.PHONY: all
+all: electron-shared.exe
+
+.PHONY: test
+test: electron-shared.exe
+	wine electron-shared.exe test\\electron-quick-start
+
+electron-shared.exe: $(OBJ_DIR)/main.o $(OBJ_DIR)/resources.o $(OBJ_DIR)/jsmn.o $(OBJ_DIR)/semver.o $(OBJ_DIR)/zip.o $(OBJ_DIR)/libui.a $(OBJ_DIR)/libcurl.a
+	$(CXX) $(OBJ_DIR)/*.o $(OBJ_DIR)/*.a $(LDFLAGS) -o electron-shared.exe
+
+$(OBJ_DIR):
+	mkdir -p $(OBJ_DIR)
+
+$(OBJ_DIR)/main.o: source/main.c | $(OBJ_DIR)
+	$(CC) $(CFLAGS) -o $(OBJ_DIR)/main.o -c source/main.c
+
+$(OBJ_DIR)/resources.o: source/resources.rc | $(OBJ_DIR)
+	$(RES) source/resources.rc $(OBJ_DIR)/resources.o
+
+$(OBJ_DIR)/jsmn.o: source/lib/jsmn/jsmn.c source/lib/jsmn/jsmn.h | $(OBJ_DIR)
+	$(CC) $(CFLAGS) -o $(OBJ_DIR)/jsmn.o -c source/lib/jsmn/jsmn.c
+
+$(OBJ_DIR)/semver.o: source/lib/semver.c/semver.c source/lib/semver.c/semver.h | $(OBJ_DIR)
+	$(CC) $(CFLAGS) -o $(OBJ_DIR)/semver.o -c source/lib/semver.c/semver.c
+
+$(OBJ_DIR)/zip.o: source/lib/zip/src/zip.c source/lib/zip/src/zip.h source/lib/zip/src/miniz.h | $(OBJ_DIR)
+	$(CC) $(CFLAGS) -o $(OBJ_DIR)/zip.o -c source/lib/zip/src/zip.c
+
+$(OBJ_DIR)/libui.a: source/lib/libui/build-mingw32/out/libui.a | $(OBJ_DIR)
+	cp -rf source/lib/libui/build-mingw32/out/libui.a $(OBJ_DIR)/libui.a
+
+$(OBJ_DIR)/libcurl.a: source/lib/curl-build-mingw32/lib/libcurl.a | $(OBJ_DIR)
+	cp -rf source/lib/curl-build-mingw32/lib/libcurl.a $(OBJ_DIR)/libcurl.a
+
+source/lib/libui/build-mingw32/out/libui.a:
+	mkdir -p source/lib/libui/build-mingw32
+	cd source/lib/libui/build-mingw32;\
+		cmake -E $(CMAKE_COMMANDS)\
+			cmake .. -DCMAKE_TOOLCHAIN_FILE=../../../../toolchain-mingw32.cmake -DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_SHARED_LIBS=OFF;\
+		make
+
+source/lib/curl-build-mingw32/lib/libcurl.a:
+	mkdir -p source/lib/curl-build-mingw32
+	cd source/lib/curl-build-mingw32;\
+		cmake -E $(CMAKE_COMMANDS)\
+			cmake ../curl -DCMAKE_TOOLCHAIN_FILE=../../../toolchain-mingw32.cmake -DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_SHARED_LIBS=OFF -DHTTP_ONLY=ON -DCMAKE_USE_WINSSL=ON -DCMAKE_USE_OPENSSL=OFF -DCURL_CA_PATH=none;\
+		make libcurl
+
+.PHONY: clean
+clean:
+	if [ -d "source/lib/libui/build-mingw32" ]; then rm -rf source/lib/libui/build-mingw32; fi
+	if [ -d "source/lib/curl-build-mingw32" ]; then rm -rf source/lib/curl-build-mingw32; fi
+	rm -rf $(OBJ_DIR)
+	rm -f electron-shared.exe

@@ -1,16 +1,27 @@
 #include <errno.h>
-#include <dirent.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#include <unistd.h>
-#include <pthread.h>
+#include <sys/stat.h>
 #include <sys/time.h>
+#include <unistd.h>
+#ifndef _WIN32
+	#include <dirent.h>
+	#include <pthread.h>
+	#include <semaphore.h>
+#endif
 
 #include <curl/curl.h>
+
+#ifdef _WIN32
+	//this has to be AFTER curl
+	#include <windows.h>
+	#define strdup _strdup
+#endif
+
 #include "lib/cfgpath/cfgpath.h"
 #include "lib/jsmn/jsmn.h"
 #include "lib/libui/ui.h"
@@ -33,9 +44,9 @@
 	#error OS not detected
 #endif
 
-#if defined(__i386__)
+#if defined(__i386__) || (defined(_WIN32) && !defined(_WIN64))
 	#define ARCH "ia32"
-#elif defined(__x86_64__)
+#elif defined(__x86_64__) || defined(_WIN64)
 	#define ARCH "x64"
 #elif defined(__ARM_ARCH_7__)
 	#define ARCH "armv7l"
@@ -54,13 +65,31 @@
 
 void on_error(const char *message, ...);
 
-pthread_t ui_thread;
-pthread_mutex_t _ui_mutex;
+unsigned long getTime() {
+	struct timeval now;
+	gettimeofday(&now,0);
+	return now.tv_sec*1000 + now.tv_usec/1000.0;
+}
 
-uiWindow *ui_window = NULL;
+#ifdef _WIN32
+	HANDLE ui_thread;
+	HANDLE _ui_mutex;
+	HANDLE _ui_loaded;
+#else
+	pthread_t ui_thread;
+	pthread_mutex_t _ui_mutex;
+	sem_t _ui_loaded;
+#endif
+
+bool ui_enabled = false;
+
+//for use in the window thread only
+bool _ui_window_visible = false;
+uiWindow *_ui_window = NULL;
 uiLabel *_ui_label = NULL;
 uiProgressBar *_ui_progress = NULL;
 
+//mutexed
 bool _ui_cancelled = false;
 
 void _ui_on_cancel_clicked(uiButton *b, void *data) {
@@ -85,19 +114,24 @@ static void *_ui_main(void *arg) {
 		fprintf(stderr, "Unable to initialise libui\n");
 		fprintf(stderr, "  %s\n", error);
 		uiFreeInitError(error);
+		#ifdef _WIN32
+			ReleaseSemaphore(_ui_loaded, 1, NULL);
+		#else
+			sem_post(&_ui_loaded);
+		#endif
 		return NULL;
 	}
 
-	ui_window = uiNewWindow("Updating Electron", 350, 50, false);
-	uiWindowSetMargined(ui_window, true);
-	uiWindowOnClosing(ui_window, _ui_on_window_close, NULL);
-	// uiOnShouldQuit(onShouldQuit, ui_window);
+	_ui_window = uiNewWindow("Updating Electron", 350, 50, false);
+	uiWindowSetMargined(_ui_window, true);
+	uiWindowOnClosing(_ui_window, _ui_on_window_close, NULL);
+	// uiOnShouldQuit(onShouldQuit, _ui_window);
 
 	uiBox *spacer;
 
 	uiBox *rows = uiNewVerticalBox();
 	uiBoxSetPadded(rows, true);
-	uiWindowSetChild(ui_window, uiControl(rows));
+	uiWindowSetChild(_ui_window, uiControl(rows));
 
 	spacer = uiNewVerticalBox();
 	uiBoxAppend(rows, uiControl(spacer), true);
@@ -121,12 +155,23 @@ static void *_ui_main(void *arg) {
 	spacer = uiNewVerticalBox();
 	uiBoxAppend(rows, uiControl(spacer), true);
 
-	uiControlShow(uiControl(ui_window));
+	#ifdef _WIN32
+		ReleaseSemaphore(_ui_loaded, 1, NULL);
+	#else
+		sem_post(&_ui_loaded);
+	#endif
 
 	uiMain();
 
 	return NULL;
 }
+
+#ifdef _WIN32
+DWORD WINAPI _ui_main_win32(LPVOID lpParam) {
+	_ui_main(NULL);
+	return 0;
+}
+#endif
 
 typedef struct {
 	const char *status;
@@ -143,25 +188,74 @@ static void _ui_on_update(void *arg){
 		uiProgressBarSetValue(_ui_progress, update->progress);
 	}
 	free(update);
+
+	//show the window the first time it is given information
+	if(!_ui_window_visible){
+		_ui_window_visible = true;
+		uiControlShow(uiControl(_ui_window));
+	}
 }
 
 static void _ui_on_error(void *arg){
 	const char *message = arg;
 
-	uiMsgBoxError(ui_window, "Error updating Electron", message);
-	pthread_exit(NULL);
+	uiMsgBoxError(_ui_window, "Error updating Electron", message);
+
+	#ifdef _WIN32
+		ExitThread(0);
+	#else
+		pthread_exit(NULL);
+	#endif
 }
 
-void ui_init() {
-	pthread_mutex_init(&_ui_mutex, NULL);
-
-	if(pthread_create(&ui_thread, NULL, _ui_main, NULL)) {
-		fprintf(stderr, "Error creating ui thread\n");
-		return;
+static void _ui_on_hide(void *arg){
+	if(_ui_window_visible){
+		_ui_window_visible = false;
+		uiControlHide(uiControl(_ui_window));
 	}
 }
 
+void ui_init() {
+	if(ui_enabled) return;
+
+	_ui_window_visible = false; //reset this before it belongs to the thread
+
+	#ifdef _WIN32
+		_ui_mutex = CreateMutex(NULL, FALSE, NULL);
+		_ui_loaded = CreateSemaphore(NULL, 0, 1, NULL);
+
+		ui_thread = CreateThread(NULL, 0, _ui_main_win32, NULL, 0, NULL);
+		if(!ui_thread){
+			fprintf(stderr, "Error creating ui thread\n");
+			return;
+		}
+
+		WaitForSingleObject(_ui_loaded, INFINITE);
+
+	#else
+		pthread_mutex_init(&_ui_mutex, NULL);
+		sem_init(&_ui_loaded, 0, 0);
+
+		if(pthread_create(&ui_thread, NULL, _ui_main, NULL)) {
+			fprintf(stderr, "Error creating ui thread\n");
+			return;
+		}
+
+		sem_wait(&_ui_loaded);
+	#endif
+
+	ui_enabled = true;
+}
+
+void ui_hide() {
+	if(!ui_enabled) return;
+
+	uiQueueMain(_ui_on_hide, NULL);
+}
+
 void ui_status(const char *status) {
+	if(!ui_enabled) return;
+
 	_Ui_update *update = malloc(sizeof(*update));
 	update->status = status;
 	update->progress = -1;
@@ -170,6 +264,8 @@ void ui_status(const char *status) {
 }
 
 void ui_progress(int progress) {
+	if(!ui_enabled) return;
+
 	_Ui_update *update = malloc(sizeof(*update));
 	update->status = NULL;
 	update->progress = progress;
@@ -178,22 +274,42 @@ void ui_progress(int progress) {
 }
 
 void ui_cancel() {
-	pthread_mutex_lock(&_ui_mutex);
-		_ui_cancelled = true;
-	pthread_mutex_unlock(&_ui_mutex);
+	#ifdef _WIN32
+		WaitForSingleObject(_ui_mutex, INFINITE);
+			_ui_cancelled = true;
+		ReleaseMutex(_ui_mutex);
+	#else
+		pthread_mutex_lock(&_ui_mutex);
+			_ui_cancelled = true;
+		pthread_mutex_unlock(&_ui_mutex);
+	#endif
 }
 
 bool ui_is_cancelled() {
 	bool result;
-	pthread_mutex_lock(&_ui_mutex);
-		result = _ui_cancelled;
-	pthread_mutex_unlock(&_ui_mutex);
+	#ifdef _WIN32
+		WaitForSingleObject(_ui_mutex, INFINITE);
+			result = _ui_cancelled;
+		ReleaseMutex(_ui_mutex);
+	#else
+		pthread_mutex_lock(&_ui_mutex);
+			result = _ui_cancelled;
+		pthread_mutex_unlock(&_ui_mutex);
+	#endif
 	return result;
 }
 
 void ui_error(const char *message) {
+	if(!ui_enabled) return;
+
 	uiQueueMain(_ui_on_error, (void*)message);
-	pthread_join(ui_thread, NULL);
+	#ifdef _WIN32
+		WaitForSingleObject(ui_thread, INFINITE);
+	#else
+		pthread_join(ui_thread, NULL);
+	#endif
+
+	ui_enabled = false;
 }
 
 void print_help(const char *name){
@@ -229,24 +345,51 @@ void print_downloads(){
 	char path[MAX_PATH];
 	get_user_cache_folder(path, MAX_PATH, PROGRAM_NAME);
 
-	DIR *dir = opendir(path);
-		if(!dir){
-			fprintf(stderr, "Unable to access path: %s\n", path);
-			return;
-		}
+	int count = 0;
 
-		printf("Currently downloaded electron runtimes (%s):\n", path);
+	#ifdef _WIN32
+		WIN32_FIND_DATA findData;
 
-		int count = 0;
-
-		struct dirent *entry;
-		while(entry = readdir(dir)){
-			if(entry->d_type==DT_DIR && entry->d_name[0]!='.'){
-				count++;
-				printf("  %s\n", entry->d_name);
+		char *searchpath = malloc(strlen(path)+2);
+		strcpy(searchpath, path);
+		strcat(searchpath, "*"); //put a wildcard star on the end
+		HANDLE search = FindFirstFile(searchpath, &findData);
+			if(search==INVALID_HANDLE_VALUE && GetLastError()!=ERROR_FILE_NOT_FOUND){
+				fprintf(stderr, "Unable to access path: %s\n", path);
+				return;
 			}
-		}
-	closedir(dir);
+
+			printf("Currently downloaded Electron runtimes (%s):\n", path);
+
+			if(search!=INVALID_HANDLE_VALUE){
+				do{
+					if(findData.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY && findData.cFileName[0]!='.'){
+						count++;
+						printf("  %s\n", findData.cFileName);
+					}
+				}while(FindNextFile(search, &findData));
+			}
+		FindClose(search);
+		free(searchpath);
+
+	#else
+		DIR *dir = opendir(path);
+			if(!dir){
+				fprintf(stderr, "Unable to access path: %s\n", path);
+				return;
+			}
+
+			printf("Currently downloaded Electron runtimes (%s):\n", path);
+
+			struct dirent *entry;
+			while(entry = readdir(dir)){
+				if(entry->d_type==DT_DIR && entry->d_name[0]!='.'){
+					count++;
+					printf("  %s\n", entry->d_name);
+				}
+			}
+		closedir(dir);
+	#endif
 
 	if(!count){
 		printf("  none found\n");
@@ -270,7 +413,7 @@ int read_file_fs(const char *directory, const char *filename, char **buffer) {
 	file = fopen(filePath, "r");
 	if(!file){
 		free(filePath);
-		return errno?:-1;
+		return errno?errno:-1;
 	}
 
 	fseek(file, 0, SEEK_END);
@@ -281,7 +424,7 @@ int read_file_fs(const char *directory, const char *filename, char **buffer) {
 	if(!buffer){
 		fclose(file);
 		free(filePath);
-		return errno?:-1;
+		return errno?errno:-1;
 	}
 
 	read = fread(*buffer, 1, size, file);
@@ -306,7 +449,7 @@ int read_file_asar(const char *archive, const char *filename, char **buffer) {
 	FILE *file;
 	file = fopen(archive, "rb");
 	if(!file){
-		return errno?:-1;
+		return errno?errno:-1;
 	}
 
 	int error = -1;
@@ -407,7 +550,9 @@ typedef struct {
 	size_t size;
 } _Curl_buffer;
 
-static size_t _on_curl_write_memory(char *ptr, size_t size, size_t nmemb, _Curl_buffer *buffer) {
+static size_t _on_curl_write_memory(const char *ptr, size_t size, size_t nmemb, void *userdata) {
+	_Curl_buffer *buffer = userdata;
+
 	size_t chunkSize = size*nmemb;
 
 	if(buffer->size+chunkSize>=buffer->size){
@@ -430,15 +575,25 @@ static size_t _on_curl_write_memory(char *ptr, size_t size, size_t nmemb, _Curl_
 	return chunkSize;
 }
 
-static size_t _on_curl_write_file(char *ptr, size_t size, size_t nmemb, FILE *file) {
+static size_t _on_curl_write_file(const char *ptr, size_t size, size_t nmemb, void *userdata) {
+	FILE *file = userdata;
+
 	return fwrite(ptr, size, nmemb, file);
 }
 
-static int _on_curl_progress(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) {
-	if(dltotal>0){
-		ui_progress((dlnow*100)/dltotal);
-	}else{
-		ui_progress(0);
+static int _on_curl_progress(void *clientp, double dltotal, double dlnow, double ultotal, double ulnow) {
+	static unsigned long lastUiTime = 0;
+
+	unsigned long now = getTime();
+
+	if(now-lastUiTime>1000/30){
+		lastUiTime = now;
+
+		if(dltotal>0){
+			ui_progress((int)((dlnow*100)/dltotal));
+		}else{
+			ui_progress(0);
+		}
 	}
 
 	if(ui_is_cancelled()) return 1;
@@ -471,10 +626,10 @@ void fetch(char **buffer, const char *url) {
 	curl_easy_setopt(curl, CURLOPT_URL, url);
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, PROGRAM_NAME "/" PROGRAM_VERSION);
 	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, true);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _on_curl_write_memory);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &curlBuffer);
-    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, _on_curl_progress);
-    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, false);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _on_curl_write_memory);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, &curlBuffer);
+	curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, _on_curl_progress);
+	curl_easy_setopt(curl, CURLOPT_NOPROGRESS, false);
 
 	CURLcode response = curl_easy_perform(curl);
 
@@ -520,10 +675,12 @@ bool download(const char *url, const char *filename) {
 	curl_easy_setopt(curl, CURLOPT_URL, url);
 	curl_easy_setopt(curl, CURLOPT_USERAGENT, PROGRAM_NAME "/" PROGRAM_VERSION);
 	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, true);
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _on_curl_write_file);
-    curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, _on_curl_progress);
-    curl_easy_setopt(curl, CURLOPT_NOPROGRESS, false);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, file);
+	curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, _on_curl_write_file);
+	if(ui_enabled){
+		curl_easy_setopt(curl, CURLOPT_PROGRESSFUNCTION, _on_curl_progress);
+	}
+	curl_easy_setopt(curl, CURLOPT_NOPROGRESS, false);
+	curl_easy_setopt(curl, CURLOPT_WRITEDATA, file);
 
 	CURLcode response = curl_easy_perform(curl);
 
@@ -653,14 +810,99 @@ void read_electron_requirement(char **requirement, char *data) {
 
 void on_error(const char *message, ...) {
 	static char buffer[512];
-    va_list args;
-    va_start(args, message);
-    vsnprintf(buffer, sizeof(buffer)/sizeof(buffer[0]), message, args);
-    va_end(args);
+	va_list args;
+	va_start(args, message);
+	vsnprintf(buffer, sizeof(buffer)/sizeof(buffer[0]), message, args);
+	va_end(args);
 
-    fprintf(stderr, "%s\n", buffer);
-    ui_error(buffer);
+	fprintf(stderr, "%s\n", buffer);
+	ui_error(buffer);
 }
+
+#ifdef _WIN32
+
+	// Windows doesn't support passing multiple parameters, and instead condenses them to a single commandline string
+	// Thus we must build this string ourselves, quote all arguments, and escape special characters
+	int execvp_win32(char *file, char *const argv[], int *launchError) {
+		char *commandline = malloc(1);
+		commandline[0] = '\0';
+		size_t commandlineLength = 0;
+
+		*launchError = 0;
+
+		int i = 0;
+		for(char *arg=argv[i]; arg; arg=argv[++i]){
+			if(arg[0]=='\0') continue;
+
+			commandline = realloc(commandline, commandlineLength+1+1+strlen(arg)*2+1+1); //allocate room for a space, open quote, double the size the string (escaping every char), a close quote, and a null
+
+			if(commandlineLength>0){
+				commandline[commandlineLength++] = ' ';
+			}
+
+			commandline[commandlineLength++] = '"';
+
+			for(;*arg;arg++){
+				unsigned escapes = 0;
+				while(*arg=='\\'){
+					commandline[commandlineLength++] = *arg;
+					escapes++;
+					arg++;
+				}
+
+				switch(*arg){
+					case '\0':
+						//if string is ending, escape all escape characters so the closing " can be parsed
+						for(int i2=0;i2<escapes;i2++){
+							commandline[commandlineLength++] = '\\';
+						}
+					break;
+					case '&':
+					case '\\':
+					case '<':
+					case '>':
+					case '^':
+					case '|':
+					case '"':
+						//also double escape if a special character follows, followed by that character, escaped
+						for(int i2=0;i2<escapes;i2++){
+							commandline[commandlineLength++] = '\\';
+						}
+						commandline[commandlineLength++] = '\\';
+						commandline[commandlineLength++] = *arg;
+					break;
+					default:
+						commandline[commandlineLength++] = *arg;
+				}
+			}
+
+			commandline[commandlineLength++] = '"';
+			commandline[commandlineLength] = '\0';
+		}
+
+		STARTUPINFO startupInfo;
+		memset(&startupInfo, 0, sizeof(startupInfo));
+		startupInfo.cb = sizeof(startupInfo);
+
+		PROCESS_INFORMATION processInfo;
+		memset(&processInfo, 0, sizeof(processInfo));
+
+		if(!CreateProcess(file, commandline, NULL, NULL, FALSE, CREATE_DEFAULT_ERROR_MODE, NULL, NULL, &startupInfo, &processInfo)){
+			*launchError = GetLastError();
+			free(commandline);
+			return 1;
+		}
+
+		int result = WaitForSingleObject(processInfo.hProcess, INFINITE);
+
+		CloseHandle(processInfo.hProcess);
+		CloseHandle(processInfo.hThread);
+
+		free(commandline);
+
+		return result;
+	}
+#endif
 
 int main(int argc, const char *argv[]) {
 	char *projectPath = "app";
@@ -669,9 +911,16 @@ int main(int argc, const char *argv[]) {
 	bool downloadOnly = false;
 	bool silent = false;
 
-	char *electron = "electron";
 	char **electronParams = malloc((argc+1)*sizeof(const char*)); // +1 in case a project path wasn't included and we append one
-	int electronParamCount = 1;
+	int electronParamCount = 2; //we'll leave room for the electron path and the project path, which will be param 1
+
+	#ifdef _WIN32
+		if(AttachConsole(ATTACH_PARENT_PROCESS)||AttachConsole(GetCurrentProcessId())){
+			freopen("CONIN$", "r", stdin);
+			freopen("CONOUT$", "w", stdout);
+			freopen("CONOUT$", "w", stderr);
+		}
+	#endif
 
 	{ //read params
 
@@ -732,7 +981,7 @@ int main(int argc, const char *argv[]) {
 			int error = read_file(projectPath, "package.json", &projectFile);
 
 			if(error==ENOENT){
-				char *projectPathExtended = malloc(sizeof(projectPath)+5+1);
+				char *projectPathExtended = malloc(strlen(projectPath)+5+1);
 				strcpy(projectPathExtended, projectPath);
 				strcat(projectPathExtended, ".asar");
 
@@ -792,7 +1041,7 @@ int main(int argc, const char *argv[]) {
 		}
 
 		if(semver_parse(semverString, &versionRequirement)){
-			fprintf(stderr, "Unable to parse electron dependency version \"%s\"\n", semverString);
+			fprintf(stderr, "Unable to parse Electron dependency version \"%s\"\n", semverString);
 			return 1;
 		}
 	}
@@ -803,6 +1052,39 @@ int main(int argc, const char *argv[]) {
 	semver_t bestVersion;
 	char *bestVersionString = NULL;
 	{
+	#ifdef _WIN32
+		WIN32_FIND_DATA findData;
+
+		char *storePathSearch = malloc(strlen(storePath)+2);
+		strcpy(storePathSearch, storePath);
+		strcat(storePathSearch, "*"); //put a wildcard star on the end
+
+		HANDLE search = FindFirstFile(storePathSearch, &findData);
+			free(storePathSearch);
+
+			if(search==INVALID_HANDLE_VALUE && GetLastError()!=ERROR_FILE_NOT_FOUND){
+				on_error("Unable to access path: %s", storePath);
+				return 1;
+			}
+
+			if(search!=INVALID_HANDLE_VALUE){
+				do{
+					if(findData.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY && findData.cFileName[0]!='.'){
+						semver_t version;
+
+						if(!semver_parse(findData.cFileName, &version)){
+							if(semver_satisfies(version, versionRequirement, versionOp) && (!bestVersionString || semver_compare(version, bestVersion)>0)){
+								bestVersion = version;
+								free(bestVersionString);
+								bestVersionString = strdup(findData.cFileName);
+							}
+						}
+					}
+				}while(FindNextFile(search, &findData));
+			}
+		FindClose(search);
+
+	#else
 		DIR *dir = opendir(storePath);
 			if(!dir){
 				on_error("Unable to access path: %s", storePath);
@@ -824,6 +1106,7 @@ int main(int argc, const char *argv[]) {
 				}
 			}
 		closedir(dir);
+	#endif
 	}
 
 	if(!bestVersionString){
@@ -968,9 +1251,15 @@ int main(int argc, const char *argv[]) {
 
 			printf("Extracting...\n");
 
-			if(mkdir(extractDestination, 0700)<0){
-				on_error("Unable to create path for writing: %s", extractDestination);
-			}
+			#ifdef _WIN32
+				if(mkdir(extractDestination)<0){
+					on_error("Unable to create path for writing: %s", extractDestination);
+				}
+			#else
+				if(mkdir(extractDestination, 0700)<0){
+					on_error("Unable to create path for writing: %s", extractDestination);
+				}
+			#endif
 
 			if(!extract_files(downloadDestination, extractDestination)){
 				rmdir(extractDestination);
@@ -988,14 +1277,36 @@ int main(int argc, const char *argv[]) {
 	if(!downloadOnly){
 		printf("Launching Electron %s (%s)...\n", bestVersionString, electronRequirement);
 
-		electron = calloc(strlen(storePath)+strlen(bestVersionString)+9, 1);
-		sprintf(electron, "%s%s" PATH_SEPARATOR "electron", storePath, bestVersionString);
+		#ifdef _WIN32
+			char *electronPath = malloc(strlen(storePath)+strlen(bestVersionString)+12+1);
+			sprintf(electronPath, "%s%s" PATH_SEPARATOR "electron.exe", storePath, bestVersionString);
+		#else
+			char *electronPath = malloc(strlen(storePath)+strlen(bestVersionString)+8+1);
+			sprintf(electronPath, "%s%s" PATH_SEPARATOR "electron", storePath, bestVersionString);
+		#endif
 
-		electronParams[0] = electron;
-		electronParams[electronParamCount++] = projectPath;
+		electronParams[0] = electronPath;
+		electronParams[1] = projectPath;
 		electronParams[electronParamCount] = NULL;
 
-		return execvp(electron, electronParams);
+		#ifdef _WIN32
+			ui_hide();
+
+			int launchError;
+			int result = execvp_win32(electronPath, electronParams, &launchError);
+
+			if(launchError){
+				if(!silent&&!ui_enabled){
+					ui_init();
+				}
+				on_error("Error %i launching %s", launchError, electronPath);
+				result = 1;
+			}
+
+			return result;
+		#else
+			return execvp(electronPath, electronParams);
+		#endif
 	}
 
 	return 0;

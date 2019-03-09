@@ -16,3 +16,6 @@
 [submodule "test/electron-quick-start"]
 	path = test/electron-quick-start
 	url = https://github.com/electron/electron-quick-start
+[submodule "source/lib/curl"]
+	path = source/lib/curl
+	url = https://github.com/curl/curl.git

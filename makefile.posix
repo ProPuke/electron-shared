@@ -1,0 +1,46 @@
+CC      = gcc
+CXX     = g++
+CFLAGS  = -Os -fdata-sections -ffunction-sections
+LDFLAGS = -lm -lcurl -lpthread -ldl `pkg-config gtk+-3.0 --libs` -s -Wl,--gc-sections
+OBJ_DIR = obj/posix
+
+.PHONY: all
+all: electron-shared
+
+.PHONY: test
+test: electron-shared
+	./electron-shared test/electron-quick-start
+
+electron-shared: $(OBJ_DIR)/main.o $(OBJ_DIR)/jsmn.o $(OBJ_DIR)/semver.o $(OBJ_DIR)/zip.o $(OBJ_DIR)/libui.a
+	$(CC) $(OBJ_DIR)/*.o $(OBJ_DIR)/*.a $(LDFLAGS) -o electron-shared
+
+$(OBJ_DIR):
+	mkdir -p $(OBJ_DIR)
+
+$(OBJ_DIR)/main.o: source/main.c | $(OBJ_DIR)
+	$(CC) $(CFLAGS) -o $(OBJ_DIR)/main.o -c source/main.c
+
+$(OBJ_DIR)/jsmn.o: source/lib/jsmn/jsmn.c source/lib/jsmn/jsmn.h | $(OBJ_DIR)
+	$(CC) $(CFLAGS) -o $(OBJ_DIR)/jsmn.o -c source/lib/jsmn/jsmn.c
+
+$(OBJ_DIR)/semver.o: source/lib/semver.c/semver.c source/lib/semver.c/semver.h | $(OBJ_DIR)
+	$(CC) $(CFLAGS) -o $(OBJ_DIR)/semver.o -c source/lib/semver.c/semver.c
+
+$(OBJ_DIR)/zip.o: source/lib/zip/src/zip.c source/lib/zip/src/zip.h source/lib/zip/src/miniz.h | $(OBJ_DIR)
+	$(CC) $(CFLAGS) -o $(OBJ_DIR)/zip.o -c source/lib/zip/src/zip.c
+
+$(OBJ_DIR)/libui.a: source/lib/libui/build-posix/out/libui.a | $(OBJ_DIR)
+	cp -rf source/lib/libui/build-posix/out/libui.a $(OBJ_DIR)/libui.a
+
+source/lib/libui/build-posix/out/libui.a:
+	mkdir -p source/lib/libui/build-posix
+	cd source/lib/libui/build-posix;\
+		cmake -E env CFLAGS="-fdata-sections -ffunction-sections" CXXFLAGS="-fdata-sections -ffunction-sections"\
+			cmake .. -DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_SHARED_LIBS=OFF;\
+		make
+
+.PHONY: clean
+clean:
+	if [ -d "source/lib/libui/build-posix" ]; then rm -rf source/lib/libui/build-posix; fi
+	rm -rf $(OBJ_DIR)
+	rm -f electron-shared
