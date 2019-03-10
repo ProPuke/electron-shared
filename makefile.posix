@@ -32,6 +32,7 @@ $(OBJ_DIR)/zip.o: source/lib/zip/src/zip.c source/lib/zip/src/zip.h source/lib/z
 $(OBJ_DIR)/libui.a: source/lib/libui/build-posix/out/libui.a | $(OBJ_DIR)
 	cp -rf source/lib/libui/build-posix/out/libui.a $(OBJ_DIR)/libui.a
 
+.PHONY: source/lib/libui/build-posix/out/libui.a
 source/lib/libui/build-posix/out/libui.a:
 	mkdir -p source/lib/libui/build-posix
 	cd source/lib/libui/build-posix;\

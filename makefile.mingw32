@@ -40,6 +40,7 @@ $(OBJ_DIR)/libui.a: source/lib/libui/build-mingw32/out/libui.a | $(OBJ_DIR)
 $(OBJ_DIR)/libcurl.a: source/lib/curl-build-mingw32/lib/libcurl.a | $(OBJ_DIR)
 	cp -rf source/lib/curl-build-mingw32/lib/libcurl.a $(OBJ_DIR)/libcurl.a
 
+.PHONY: source/lib/libui/build-mingw32/out/libui.a
 source/lib/libui/build-mingw32/out/libui.a:
 	mkdir -p source/lib/libui/build-mingw32
 	cd source/lib/libui/build-mingw32;\
@@ -47,6 +48,7 @@ source/lib/libui/build-mingw32/out/libui.a:
 			cmake .. -DCMAKE_TOOLCHAIN_FILE=../../../../toolchain-mingw32.cmake -DCMAKE_BUILD_TYPE=MinSizeRel -DBUILD_SHARED_LIBS=OFF;\
 		make
 
+.PHONY: source/lib/curl-build-mingw32/lib/libcurl.a
 source/lib/curl-build-mingw32/lib/libcurl.a:
 	mkdir -p source/lib/curl-build-mingw32
 	cd source/lib/curl-build-mingw32;\
