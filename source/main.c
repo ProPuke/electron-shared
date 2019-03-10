@@ -1023,11 +1023,11 @@ int main(int argc, const char *argv[]) {
 		char *semverString = electronRequirement;
 
 		{ //read first 2 symbols (non-numbers) as operator
-			if(*semverString<='0'||*semverString>='9'){
+			if(*semverString && (*semverString<='0'||*semverString>='9')){
 				versionOp[0] = *semverString;
 				semverString++;
 
-				if(*semverString<='0'||*semverString>='9'){
+				if(*semverString && (*semverString<='0'||*semverString>='9')){
 					versionOp[1] = *semverString;
 					semverString++;
 				}
