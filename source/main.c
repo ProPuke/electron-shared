@@ -1073,7 +1073,7 @@ int main(int argc, const char *argv[]) {
 						semver_t version;
 
 						if(!semver_parse(findData.cFileName, &version)){
-							if(semver_satisfies(version, versionRequirement, versionOp) && (!bestVersionString || semver_compare(version, bestVersion)>0)){
+							if((!version.prerelease || versionRequirement.prerelease) && semver_satisfies(version, versionRequirement, versionOp) && (!bestVersionString || semver_compare(version, bestVersion)>0)){
 								bestVersion = version;
 								free(bestVersionString);
 								bestVersionString = strdup(findData.cFileName);
@@ -1097,7 +1097,7 @@ int main(int argc, const char *argv[]) {
 					semver_t version;
 
 					if(!semver_parse(entry->d_name, &version)){
-						if(semver_satisfies(version, versionRequirement, versionOp) && (!bestVersionString || semver_compare(version, bestVersion)>0)){
+						if((!version.prerelease || versionRequirement.prerelease) && semver_satisfies(version, versionRequirement, versionOp) && (!bestVersionString || semver_compare(version, bestVersion)>0)){
 							bestVersion = version;
 							free(bestVersionString);
 							bestVersionString = strdup(entry->d_name);
@@ -1205,7 +1205,7 @@ int main(int argc, const char *argv[]) {
 
 								semver_t version;
 								if(!semver_parse(versionString, &version)){
-									if(semver_satisfies(version, versionRequirement, versionOp) && (!bestVersionString || semver_compare(version, bestVersion)>0)){
+									if((!version.prerelease || versionRequirement.prerelease) && semver_satisfies(version, versionRequirement, versionOp) && (!bestVersionString || semver_compare(version, bestVersion)>0)){
 										bestVersion = version;
 										free(bestVersionString);
 										bestVersionString = strdup(versionString);
