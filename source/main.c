@@ -1041,7 +1041,7 @@ int main(int argc, const char *argv[]) {
 		}
 
 		if(semver_parse(semverString, &versionRequirement)){
-			fprintf(stderr, "Unable to parse Electron dependency version \"%s\"\n", semverString);
+			fprintf(stderr, "Unable to parse Electron dependency version \"%s\"\n", electronRequirement);
 			return 1;
 		}
 	}
