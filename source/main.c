@@ -420,7 +420,7 @@ int read_file_fs(const char *directory, const char *filename, char **buffer) {
 	size = ftell(file);
 	fseek(file, 0, SEEK_SET);
 
-	*buffer = malloc(size);
+	*buffer = malloc(size+1);
 	if(!buffer){
 		fclose(file);
 		free(filePath);
@@ -428,6 +428,7 @@ int read_file_fs(const char *directory, const char *filename, char **buffer) {
 	}
 
 	read = fread(*buffer, 1, size, file);
+	(*buffer)[size] = '\0';
 	fclose(file);
 
 	if(read<size){
@@ -499,7 +500,7 @@ int read_file_asar(const char *archive, const char *filename, char **buffer) {
 		unsigned long int size = strtoul(&header[json[sizePosition].start], NULL, 10);
 		unsigned long int offset = strtoul(&header[json[offsetPosition].start], NULL, 10);
 
-		*buffer = malloc(size);
+		*buffer = malloc(size+1);
 		if(!*buffer){
 			fprintf(stderr, "Out of memory reading \"%s\" from \"%s\" ASAR archive\n", filename, archive);
 			break;
@@ -513,6 +514,7 @@ int read_file_asar(const char *archive, const char *filename, char **buffer) {
 			*buffer = NULL;
 			break;
 		}
+		(*buffer)[size] = '\0';
 
 		error = 0;
 
