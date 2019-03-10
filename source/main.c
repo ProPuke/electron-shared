@@ -803,6 +803,8 @@ void read_electron_requirement(char **requirement, char *data) {
 
 	if(*requirement){
 		*requirement = strdup(*requirement);
+	}else{
+		*requirement = strdup(">=1.0");
 	}
 
 	free(json);
