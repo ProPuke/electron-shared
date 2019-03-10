@@ -471,7 +471,7 @@ int read_file_asar(const char *archive, const char *filename, char **buffer) {
 		header = malloc(headerStringSize);
 		if(!fread(header, headerStringSize, 1, file)) break;
 
-		if(fseek(file, ASAR_ALIGN(16+headerStringSize), SEEK_SET)) break;
+		// if(fseek(file, ASAR_ALIGN(16+headerStringSize), SEEK_SET)) break; //apparently these AREN'T aligned?
 
 
 		int parsed = json_init(&jsonParser, &json, header);
