@@ -763,9 +763,7 @@ void read_electron_requirement(char **requirement, char *data) {
 
 	int parsed = json_init(&jsonParser, &json, data);
 
-	if(!json) return;
-
-	if(parsed<1||json[0].type!=JSMN_OBJECT){
+	if(!json||parsed<1||json[0].type!=JSMN_OBJECT){
 		fprintf(stderr, "Error parsing package.json\n");
 		free(json);
 		return;
@@ -1012,7 +1010,6 @@ int main(int argc, const char *argv[]) {
 		read_electron_requirement(&electronRequirement, projectFile);
 
 		if(!electronRequirement){
-			fprintf(stderr, "Unable to read an \"electron\" dependency line in package.json\n");
 			return 1;
 		}
 
