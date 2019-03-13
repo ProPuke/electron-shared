@@ -1,5 +1,8 @@
 # Electron-shared
 
+[Usage](#usage)  
+[How to Build](#building)
+
 A (proof of concept?) launcher for Electron apps  
 No need to include Electron with your apps, just use this? (or that's the theory)
 
