@@ -49,7 +49,12 @@ It is cross-compiled for Windows from within Linux via MinGW
 The makefiles *should* also work from within macOS, although this has not been tested  
 If anyone wants to contribute a native build process for Windows this would be greatly appreciated
 
-Building is done via 3 makefiles:
+First, clone the repo along with all submodules, by using the `--recursive` flag:
+```
+git clone --recursive https://github.com/ProPuke/electron-shared.git
+```
+
+Building is then done via 3 makefiles:
 * `makefile.posix` - This will compile for your local (posix-compliant) OS. Libraries such as libcurl will be dynamically linked.
 * `makefile.win32` - This will compile for 32bit win32. Libraries such as libcurl will be statically compiled into the executable.
 * `makefile` - This will simply call both of the above, producing both a native executable *and* a 32bit win32 executable for distribution
