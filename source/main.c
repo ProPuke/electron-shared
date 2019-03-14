@@ -401,9 +401,9 @@ bool json_find(jsmntok_t json[], int jsonLength, char *data, int parent, int *_p
 void json_next(jsmntok_t json[], int jsonLength, int *position);
 
 int read_file_fs(const char *directory, const char *filename, char **buffer) {
-	*buffer = 0;
+	*buffer = NULL;
 
-	char *filePath = malloc(strlen(directory)+strlen(filename)+1);
+	char *filePath = malloc(strlen(directory)+1+strlen(filename)+1);
 	sprintf(filePath, "%s" PATH_SEPARATOR "%s", directory, filename);
 
 	FILE *file;
@@ -421,7 +421,8 @@ int read_file_fs(const char *directory, const char *filename, char **buffer) {
 	fseek(file, 0, SEEK_SET);
 
 	*buffer = malloc(size+1);
-	if(!buffer){
+	if(!*buffer){
+		fprintf(stderr, "Out of memory reading \"%s\" from \"%s\"\n", filename, directory);
 		fclose(file);
 		free(filePath);
 		return errno?errno:-1;
@@ -469,8 +470,9 @@ int read_file_asar(const char *archive, const char *filename, char **buffer) {
 		if(fseek(file, 4, SEEK_CUR)) break;
 		if(!fread(&headerStringSize, 4, 1, file)) break;
 
-		header = malloc(headerStringSize);
+		header = malloc(headerStringSize+1);
 		if(!fread(header, headerStringSize, 1, file)) break;
+		header[headerSize] = '\0';
 
 		// if(fseek(file, ASAR_ALIGN(16+headerStringSize), SEEK_SET)) break; //apparently these AREN'T aligned?
 
@@ -913,7 +915,7 @@ int main(int argc, const char *argv[]) {
 	bool downloadOnly = false;
 	bool silent = false;
 
-	char **electronParams = malloc((argc+1)*sizeof(const char*)); // +1 in case a project path wasn't included and we append one
+	char **electronParams = malloc((argc+1+1)*sizeof(const char*)); // +1 in case a project path wasn't included and we append one, +1 for end null
 	int electronParamCount = 2; //we'll leave room for the electron path and the project path, which will be param 1
 
 	#ifdef _WIN32
@@ -1279,10 +1281,10 @@ int main(int argc, const char *argv[]) {
 		printf("Launching Electron %s (%s)...\n", bestVersionString, electronRequirement);
 
 		#ifdef _WIN32
-			char *electronPath = malloc(strlen(storePath)+strlen(bestVersionString)+12+1);
+			char *electronPath = malloc(strlen(storePath)+1+strlen(bestVersionString)+12+1);
 			sprintf(electronPath, "%s%s" PATH_SEPARATOR "electron.exe", storePath, bestVersionString);
 		#else
-			char *electronPath = malloc(strlen(storePath)+strlen(bestVersionString)+8+1);
+			char *electronPath = malloc(strlen(storePath)+1+strlen(bestVersionString)+8+1);
 			sprintf(electronPath, "%s%s" PATH_SEPARATOR "electron", storePath, bestVersionString);
 		#endif
 
