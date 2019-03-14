@@ -61,7 +61,7 @@ Building is then done via 3 makefiles:
 
 ### Building for Linux (and macOS)
 
-To build exclusively for Linux (and hopefully also macOS), ensure the following libraries are installed: `libcurl` and `libgtk-3-dev` and execute the posix makefile as follows:
+To build exclusively for Linux (and hopefully also macOS), ensure `cmake`, the following libraries are installed: `libcurl` and `libgtk-3-dev`, and execute the posix makefile as follows:
 
 ```
 make -f makefile.posix
@@ -71,7 +71,7 @@ This will generate a native `electron-shared` executable
 
 ### Building for Windows (from within Linux)
 
-To build for Windows from within Linux ensure the following library is installed: `mingw-w64` and execute the windows makefile as follows:
+To build for Windows from within Linux ensure `cmake` the following library is installed: `mingw-w64`, and execute the windows makefile as follows:
 
 ```
 make -f makefile.win32
