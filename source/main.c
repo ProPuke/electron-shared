@@ -429,7 +429,7 @@ int read_file_fs(const char *directory, const char *filename, char **buffer) {
 	}
 
 	read = fread(*buffer, 1, size, file);
-	(*buffer)[size] = '\0';
+	(*buffer)[read] = '\0';
 	fclose(file);
 
 	if(read<size){
@@ -1281,10 +1281,10 @@ int main(int argc, const char *argv[]) {
 		printf("Launching Electron %s (%s)...\n", bestVersionString, electronRequirement);
 
 		#ifdef _WIN32
-			char *electronPath = malloc(strlen(storePath)+1+strlen(bestVersionString)+12+1);
+			char *electronPath = malloc(strlen(storePath)+strlen(bestVersionString)+1+12+1);
 			sprintf(electronPath, "%s%s" PATH_SEPARATOR "electron.exe", storePath, bestVersionString);
 		#else
-			char *electronPath = malloc(strlen(storePath)+1+strlen(bestVersionString)+8+1);
+			char *electronPath = malloc(strlen(storePath)+strlen(bestVersionString)+1+8+1);
 			sprintf(electronPath, "%s%s" PATH_SEPARATOR "electron", storePath, bestVersionString);
 		#endif
 
