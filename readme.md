@@ -56,7 +56,7 @@ git clone --recursive https://github.com/ProPuke/electron-shared.git
 
 Building is then done via 3 makefiles:
 * `makefile.posix` - This will compile for your local (posix-compliant) OS. Libraries such as libcurl will be dynamically linked.
-* `makefile.win32` - This will compile for 32bit win32. Libraries such as libcurl will be statically compiled into the executable.
+* `makefile.mingw32` - This will compile for 32bit win32. Libraries such as libcurl will be statically compiled into the executable.
 * `makefile` - This will simply call both of the above, producing both a native executable *and* a 32bit win32 executable for distribution
 
 ### Building for Linux (and macOS)
@@ -74,7 +74,7 @@ This will generate a native `electron-shared` executable
 To build for Windows from within Linux ensure `cmake` the following library is installed: `mingw-w64`, and execute the windows makefile as follows:
 
 ```
-make -f makefile.win32
+make -f makefile.mingw32
 ```
 
 This will generate an `electron-shared.exe` 32bit executable
