@@ -559,8 +559,8 @@ static size_t _on_curl_write_memory(const char *ptr, size_t size, size_t nmemb, 
 
 	size_t chunkSize = size*nmemb;
 
-	if(buffer->size+chunkSize>=buffer->size){
-		buffer->size = buffer->size+chunkSize+(64*1024);
+	if(buffer->length+chunkSize+1>=buffer->size){
+		buffer->size = buffer->size+chunkSize+1+(64*1024);
 
 		char *newBuffer = realloc(buffer->buffer, buffer->size);
 		if(!newBuffer){
