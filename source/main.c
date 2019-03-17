@@ -342,12 +342,15 @@ void print_version(){
 }
 
 void print_downloads(){
-	char path[MAX_PATH];
+	char path[MAX_PATH+8];
 	get_user_cache_folder(path, MAX_PATH, PROGRAM_NAME);
+	strcat(path, "runtime" PATH_SEPARATOR);
 
 	int count = 0;
 
 	#ifdef _WIN32
+		mkdir(path);
+
 		WIN32_FIND_DATA findData;
 
 		char *searchpath = malloc(strlen(path)+2);
@@ -373,6 +376,8 @@ void print_downloads(){
 		free(searchpath);
 
 	#else
+		mkdir(path, 0700);
+
 		DIR *dir = opendir(path);
 			if(!dir){
 				fprintf(stderr, "Unable to access path: %s\n", path);
@@ -1049,8 +1054,14 @@ int main(int argc, const char *argv[]) {
 		}
 	}
 
-	char storePath[MAX_PATH];
+	char storePath[MAX_PATH+8];
 	get_user_cache_folder(storePath, MAX_PATH, PROGRAM_NAME);
+	strcat(storePath, "runtime" PATH_SEPARATOR);
+	#ifdef _WIN32
+		mkdir(storePath);
+	#else
+		mkdir(storePath, 0700);
+	#endif
 
 	semver_t bestVersion;
 	char *bestVersionString = NULL;
